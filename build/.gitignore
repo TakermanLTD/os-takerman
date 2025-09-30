@@ -1,0 +1,11 @@
+# Build artifacts
+*.iso
+*.md5
+*.sha256
+work/
+extracted/
+*.log
+
+# Temporary files
+.tmp/
+temp/
