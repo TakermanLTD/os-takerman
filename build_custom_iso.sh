@@ -270,15 +270,24 @@ build_new_iso() {
     log "Using isolinux path: $isolinux_bin_path"
     log "Using EFI path: $efi_img_path"
     
+    # Determine boot catalog path based on isolinux location
+    local boot_cat_path="boot.cat"
+    if [[ "$isolinux_bin_path" == */* ]]; then
+        # isolinux.bin is in a subdirectory, put boot.cat there too
+        boot_cat_path="$(dirname "$isolinux_bin_path")/boot.cat"
+    fi
+    
+    log "Using boot catalog path: $boot_cat_path"
+    
     # Build ISO with proper paths
     if [ -n "$efi_img_path" ]; then
         # Full UEFI + Legacy BIOS support
         xorriso -as mkisofs \
-            -r -V "TAKERMAN AI SERVER" \
+            -r -V "TAKERMAN_AI_SERVER" \
             -o "$CUSTOM_ISO_NAME" \
             -J -joliet-long \
             -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
-            -c isolinux/boot.cat \
+            -c "$boot_cat_path" \
             -b "$isolinux_bin_path" \
             -no-emul-boot \
             -boot-load-size 4 \
@@ -292,10 +301,10 @@ build_new_iso() {
         # Legacy BIOS only
         log_warning "UEFI boot image not found, creating legacy BIOS only ISO"
         xorriso -as mkisofs \
-            -r -V "TAKERMAN AI SERVER" \
+            -r -V "TAKERMAN_AI_SERVER" \
             -o "$CUSTOM_ISO_NAME" \
             -J -joliet-long \
-            -c isolinux/boot.cat \
+            -c "$boot_cat_path" \
             -b "$isolinux_bin_path" \
             -no-emul-boot \
             -boot-load-size 4 \
