@@ -11,7 +11,7 @@ ISO_NAME="debian-12-netinst-${DEBIAN_ARCH}.iso"
 CUSTOM_ISO_NAME="TAKERMAN-AI-SERVER-debian-12-${DEBIAN_ARCH}.iso"
 # Directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$SCRIPT_DIR"
 BUILD_DIR="$PROJECT_ROOT/build"
 WORK_DIR="$BUILD_DIR/work"
 ISO_DIR="$BUILD_DIR/iso"
@@ -237,27 +237,83 @@ build_new_iso() {
     
     cd "$BUILD_DIR"
     
-    # Generate new ISO
-    xorriso -as mkisofs \
-        -r -V "TAKERMAN AI SERVER" \
-        -o "$CUSTOM_ISO_NAME" \
-        -J -joliet-long \
-        -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
-        -c isolinux/boot.cat \
-        -b isolinux/isolinux.bin \
-        -no-emul-boot \
-        -boot-load-size 4 \
-        -boot-info-table \
-        -eltorito-alt-boot \
-        -e boot/grub/efi.img \
-        -no-emul-boot \
-        -isohybrid-gpt-basdat \
-        "$EXTRACT_DIR"
+    # Check for isolinux files and their actual locations
+    log "Checking isolinux structure..."
+    find "$EXTRACT_DIR" -name "isolinux.bin" -type f
+    find "$EXTRACT_DIR" -name "efi.img" -type f
     
-    # Make ISO bootable
-    isohybrid "$CUSTOM_ISO_NAME"
+    # Determine the correct isolinux path
+    local isolinux_bin_path=""
+    local efi_img_path=""
     
-    log_success "Custom ISO built: $CUSTOM_ISO_NAME"
+    # Find isolinux.bin dynamically
+    local isolinux_full_path=$(find "$EXTRACT_DIR" -name "isolinux.bin" -type f | head -1)
+    if [ -n "$isolinux_full_path" ]; then
+        # Convert full path to relative path from EXTRACT_DIR
+        isolinux_bin_path="${isolinux_full_path#$EXTRACT_DIR/}"
+        log "Found isolinux.bin at: $isolinux_bin_path"
+    else
+        log_error "Cannot find isolinux.bin file"
+        return 1
+    fi
+    
+    # Find EFI image dynamically
+    local efi_full_path=$(find "$EXTRACT_DIR" -name "efi.img" -type f | head -1)
+    if [ -n "$efi_full_path" ]; then
+        # Convert full path to relative path from EXTRACT_DIR
+        efi_img_path="${efi_full_path#$EXTRACT_DIR/}"
+        log "Found efi.img at: $efi_img_path"
+    else
+        log_warning "EFI image not found, will create legacy BIOS only ISO"
+    fi
+    
+    log "Using isolinux path: $isolinux_bin_path"
+    log "Using EFI path: $efi_img_path"
+    
+    # Build ISO with proper paths
+    if [ -n "$efi_img_path" ]; then
+        # Full UEFI + Legacy BIOS support
+        xorriso -as mkisofs \
+            -r -V "TAKERMAN AI SERVER" \
+            -o "$CUSTOM_ISO_NAME" \
+            -J -joliet-long \
+            -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
+            -c isolinux/boot.cat \
+            -b "$isolinux_bin_path" \
+            -no-emul-boot \
+            -boot-load-size 4 \
+            -boot-info-table \
+            -eltorito-alt-boot \
+            -e "$efi_img_path" \
+            -no-emul-boot \
+            -isohybrid-gpt-basdat \
+            "$EXTRACT_DIR"
+    else
+        # Legacy BIOS only
+        log_warning "UEFI boot image not found, creating legacy BIOS only ISO"
+        xorriso -as mkisofs \
+            -r -V "TAKERMAN AI SERVER" \
+            -o "$CUSTOM_ISO_NAME" \
+            -J -joliet-long \
+            -c isolinux/boot.cat \
+            -b "$isolinux_bin_path" \
+            -no-emul-boot \
+            -boot-load-size 4 \
+            -boot-info-table \
+            "$EXTRACT_DIR"
+    fi
+    
+    # Check if ISO was created successfully
+    if [ -f "$CUSTOM_ISO_NAME" ]; then
+        # Make ISO hybrid bootable (works with both CD and USB)
+        if command -v isohybrid &> /dev/null; then
+            isohybrid "$CUSTOM_ISO_NAME" 2>/dev/null || log_warning "isohybrid failed, but ISO should still work"
+        fi
+        log_success "Custom ISO built: $CUSTOM_ISO_NAME"
+    else
+        log_error "Failed to create ISO"
+        return 1
+    fi
 }
 
 generate_checksums() {
