@@ -180,33 +180,45 @@ customize_iso() {
     chmod +x "$EXTRACT_DIR/branding/"*.sh 2>/dev/null || true
     
     # Modify isolinux configuration for automatic installation
-    local isolinux_cfg="$EXTRACT_DIR/isolinux/isolinux.cfg"
+    # Check if isolinux directory exists after potential file moves
+    local isolinux_cfg=""
     
-    if [ -f "$isolinux_cfg" ]; then
+    # Find the isolinux.cfg file
+    if [ -f "$EXTRACT_DIR/isolinux/isolinux.cfg" ]; then
+        isolinux_cfg="$EXTRACT_DIR/isolinux/isolinux.cfg"
+    elif [ -f "$EXTRACT_DIR/isolinux.cfg" ]; then
+        isolinux_cfg="$EXTRACT_DIR/isolinux.cfg"
+    fi
+    
+    if [ -n "$isolinux_cfg" ]; then
+        log "Configuring isolinux at: $isolinux_cfg"
+        
         # Backup original
         cp "$isolinux_cfg" "$isolinux_cfg.backup"
         
-        # Create new configuration
+        # Create simple, reliable configuration without menu system
         cat > "$isolinux_cfg" << EOF
+# TAKERMAN AI Server Boot Configuration
 default takerman
 prompt 0
 timeout 30
 
 label takerman
-    menu label ^TAKERMAN AI Server (Auto Install)
     kernel /install.amd/vmlinuz
     append vga=788 initrd=/install.amd/initrd.gz auto=true priority=critical preseed/file=/cdrom/preseed.cfg debian-installer/allow_unauthenticated=true quiet splash
 
 label manual
-    menu label ^Manual Debian Installation
     kernel /install.amd/vmlinuz
     append vga=788 initrd=/install.amd/initrd.gz
 
 label rescue
-    menu label ^Rescue Mode
     kernel /install.amd/vmlinuz
     append vga=788 initrd=/install.amd/initrd.gz rescue/enable=true
 EOF
+        
+        log_success "Isolinux configuration updated"
+    else
+        log_warning "Could not find isolinux.cfg file"
     fi
     
     # Modify GRUB configuration for UEFI boot
@@ -270,14 +282,79 @@ build_new_iso() {
     log "Using isolinux path: $isolinux_bin_path"
     log "Using EFI path: $efi_img_path"
     
-    # Determine boot catalog path based on isolinux location
+    # Handle boot catalog directory structure
     local boot_cat_path="boot.cat"
-    if [[ "$isolinux_bin_path" == */* ]]; then
-        # isolinux.bin is in a subdirectory, put boot.cat there too
+    
+    # If isolinux.bin is in root, we need to create an isolinux directory for the boot catalog
+    if [[ "$isolinux_bin_path" != */* ]]; then
+        # isolinux.bin is in root, create isolinux directory and move it there
+        log "Moving isolinux.bin to isolinux/ directory for proper boot structure"
+        mkdir -p "$EXTRACT_DIR/isolinux"
+        mv "$EXTRACT_DIR/isolinux.bin" "$EXTRACT_DIR/isolinux/"
+        
+        # Also move other isolinux files if they exist
+        find "$EXTRACT_DIR" -maxdepth 1 -name "*.c32" -exec mv {} "$EXTRACT_DIR/isolinux/" \; 2>/dev/null || true
+        find "$EXTRACT_DIR" -maxdepth 1 -name "isolinux.*" -exec mv {} "$EXTRACT_DIR/isolinux/" \; 2>/dev/null || true
+        
+        # Update isolinux configuration after moving files
+        local moved_isolinux_cfg="$EXTRACT_DIR/isolinux/isolinux.cfg"
+        if [ -f "$moved_isolinux_cfg" ]; then
+            log "Updating moved isolinux configuration"
+            cp "$moved_isolinux_cfg" "$moved_isolinux_cfg.backup"
+            
+            cat > "$moved_isolinux_cfg" << 'EOF'
+# TAKERMAN AI Server Boot Configuration
+default takerman
+prompt 0
+timeout 30
+
+label takerman
+    kernel /install.amd/vmlinuz
+    append vga=788 initrd=/install.amd/initrd.gz auto=true priority=critical preseed/file=/cdrom/preseed.cfg debian-installer/allow_unauthenticated=true quiet splash
+
+label manual
+    kernel /install.amd/vmlinuz
+    append vga=788 initrd=/install.amd/initrd.gz
+
+label rescue
+    kernel /install.amd/vmlinuz
+    append vga=788 initrd=/install.amd/initrd.gz rescue/enable=true
+EOF
+        fi
+        
+        isolinux_bin_path="isolinux/isolinux.bin"
+        boot_cat_path="isolinux/boot.cat"
+    else
+        # isolinux.bin is already in a subdirectory
         boot_cat_path="$(dirname "$isolinux_bin_path")/boot.cat"
     fi
     
+    log "Using isolinux path: $isolinux_bin_path"
     log "Using boot catalog path: $boot_cat_path"
+    
+    # Debug: Show final boot structure
+    log "Final boot file structure:"
+    find "$EXTRACT_DIR" -name "isolinux*" -o -name "*.c32" -o -name "vmlinuz" -o -name "initrd.gz" | sort
+    
+    # Verify critical boot files exist
+    log "Checking critical boot files:"
+    if [ -f "$EXTRACT_DIR/install.amd/vmlinuz" ]; then
+        log "✓ vmlinuz found"
+    else
+        log_error "✗ vmlinuz missing"
+    fi
+    
+    if [ -f "$EXTRACT_DIR/install.amd/initrd.gz" ]; then
+        log "✓ initrd.gz found"
+    else
+        log_error "✗ initrd.gz missing"
+    fi
+    
+    if [ -f "$EXTRACT_DIR/preseed.cfg" ]; then
+        log "✓ preseed.cfg found"
+    else
+        log_error "✗ preseed.cfg missing"
+    fi
     
     # Build ISO with proper paths
     if [ -n "$efi_img_path" ]; then
@@ -356,6 +433,12 @@ print_summary() {
     echo "  2. Boot from the USB/CD on your target machine"
     echo "  3. The installation will proceed automatically"
     echo "  4. After installation, the AI setup will run on first boot"
+    echo ""
+    echo -e "${YELLOW}🖥️  VirtualBox Users:${NC}"
+    echo "  - Do NOT use 'Unattended Installation' when creating VM"
+    echo "  - Use 'Expert Mode' and attach ISO manually"
+    echo "  - If you get VERR_ALREADY_EXISTS errors, delete Unattended* files"
+    echo "  - The preseed configuration will handle automation"
     echo
     echo -e "${YELLOW}🔐 TAKERMAN AI Server Access:${NC}"
     echo "  - Username: root"
