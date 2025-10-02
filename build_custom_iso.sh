@@ -164,11 +164,12 @@ extract_iso() {
 customize_iso() {
     log "Customizing ISO for TAKERMAN AI Server..."
     
-    # Copy preseed configuration
-    cp "$PROJECT_ROOT/configs/preseed.cfg" "$EXTRACT_DIR/preseed.cfg"
-    
     # Create directories in ISO
     mkdir -p "$EXTRACT_DIR/scripts" "$EXTRACT_DIR/branding"
+    
+    # Copy preseed configuration to ISO root (accessible via /cdrom/ during install)
+    cp "$PROJECT_ROOT/configs/preseed.cfg" "$EXTRACT_DIR/preseed.cfg"
+    log "Preseed configuration copied to ISO root"
     
     # Copy all custom files
     cp "$PROJECT_ROOT/scripts/"*.sh "$EXTRACT_DIR/scripts/"
@@ -178,6 +179,70 @@ customize_iso() {
     # Make scripts executable
     chmod +x "$EXTRACT_DIR/scripts/"*.sh
     chmod +x "$EXTRACT_DIR/branding/"*.sh 2>/dev/null || true
+    
+    # CRITICAL: Dynamically detect kernel and initrd paths
+    log "Detecting kernel and initrd locations..."
+    local kernel_path=""
+    local initrd_path=""
+    
+    # Find vmlinuz or linux - try install directories first, then anywhere
+    kernel_path=$(find "$EXTRACT_DIR" \( -name "vmlinuz" -o -name "linux" \) -type f 2>/dev/null | grep -E "(install|boot)" | head -1)
+    if [ -z "$kernel_path" ]; then
+        # If not found in install/boot dirs, search everywhere
+        kernel_path=$(find "$EXTRACT_DIR" \( -name "vmlinuz" -o -name "linux" \) -type f 2>/dev/null | head -1)
+    fi
+    
+    if [ -z "$kernel_path" ]; then
+        log_error "Cannot find vmlinuz/linux kernel file in ISO"
+        log "Searched in: $EXTRACT_DIR"
+        find "$EXTRACT_DIR" -maxdepth 2 -type f | head -20
+        return 1
+    fi
+    
+    # Find initrd - try install directories first, then anywhere
+    initrd_path=$(find "$EXTRACT_DIR" \( -name "initrd.gz" -o -name "initrd" \) -type f 2>/dev/null | grep -E "(install|boot)" | head -1)
+    if [ -z "$initrd_path" ]; then
+        # If not found in install/boot dirs, search everywhere
+        initrd_path=$(find "$EXTRACT_DIR" \( -name "initrd.gz" -o -name "initrd" \) -type f 2>/dev/null | head -1)
+    fi
+    
+    if [ -z "$initrd_path" ]; then
+        log_error "Cannot find initrd.gz/initrd file in ISO"
+        log "Searched in: $EXTRACT_DIR"
+        return 1
+    fi
+    
+    # Convert to relative paths from EXTRACT_DIR
+    kernel_path="${kernel_path#$EXTRACT_DIR}"
+    initrd_path="${initrd_path#$EXTRACT_DIR}"
+    
+    log_success "Found kernel at: $kernel_path"
+    log_success "Found initrd at: $initrd_path"
+    
+    # INJECT PRESEED INTO INITRD (required for mini.iso)
+    log "Injecting preseed into initrd for mini.iso compatibility..."
+    local initrd_full_path="$EXTRACT_DIR$initrd_path"
+    local initrd_temp="$BUILD_DIR/initrd_preseed"
+    
+    # Create temp directory and extract initrd
+    mkdir -p "$initrd_temp"
+    cd "$initrd_temp"
+    
+    # Extract initrd (suppress warnings)
+    gunzip < "$initrd_full_path" | cpio -i --quiet 2>/dev/null || true
+    
+    # Add preseed to initrd root
+    cp "$PROJECT_ROOT/configs/preseed.cfg" "$initrd_temp/preseed.cfg"
+    
+    # Repack initrd
+    find . | cpio -o -H newc --quiet 2>/dev/null | gzip -9 > "$initrd_full_path.new"
+    mv "$initrd_full_path.new" "$initrd_full_path"
+    
+    # Cleanup
+    cd "$BUILD_DIR"
+    rm -rf "$initrd_temp"
+    
+    log_success "Preseed injected into initrd"
     
     # Modify isolinux configuration for automatic installation
     # Check if isolinux directory exists after potential file moves
@@ -196,7 +261,7 @@ customize_iso() {
         # Backup original
         cp "$isolinux_cfg" "$isolinux_cfg.backup"
         
-        # Create simple, reliable configuration without menu system
+        # Create simple, reliable configuration without menu system using detected paths
         cat > "$isolinux_cfg" << EOF
 # TAKERMAN AI Server Boot Configuration
 default takerman
@@ -204,16 +269,16 @@ prompt 0
 timeout 30
 
 label takerman
-    kernel /install.amd/vmlinuz
-    append vga=788 initrd=/install.amd/initrd.gz auto=true priority=critical preseed/file=/cdrom/preseed.cfg debian-installer/allow_unauthenticated=true quiet splash
+    kernel $kernel_path
+    append initrd=$initrd_path auto=true priority=critical preseed/file=/preseed.cfg debian-installer/allow_unauthenticated=true console-setup/ask_detect=false console-keymaps-at/keymap=us --- quiet
 
 label manual
-    kernel /install.amd/vmlinuz
-    append vga=788 initrd=/install.amd/initrd.gz
+    kernel $kernel_path
+    append initrd=$initrd_path
 
 label rescue
-    kernel /install.amd/vmlinuz
-    append vga=788 initrd=/install.amd/initrd.gz rescue/enable=true
+    kernel $kernel_path
+    append initrd=$initrd_path rescue/enable=true
 EOF
         
         log_success "Isolinux configuration updated"
@@ -228,14 +293,14 @@ EOF
         # Backup original
         cp "$grub_cfg" "$grub_cfg.backup"
         
-        # Add TAKERMAN automated installation entry at the top
-        sed -i '1i\
-menuentry "🚀 TAKERMAN AI Server (Auto Install)" {\
-    set background_color=black\
-    linux    /install.amd/vmlinuz auto=true priority=critical preseed/file=/cdrom/preseed.cfg debian-installer/allow_unauthenticated=true quiet splash ---\
-    initrd   /install.amd/initrd.gz\
-}\
-' "$grub_cfg"
+        # Add TAKERMAN automated installation entry at the top using detected paths
+        sed -i "1i\\
+menuentry \"🚀 TAKERMAN AI Server (Auto Install)\" {\\
+    set background_color=black\\
+    linux    $kernel_path auto=true priority=critical preseed/file=/preseed.cfg debian-installer/allow_unauthenticated=true console-setup/ask_detect=false --- quiet\\
+    initrd   $initrd_path\\
+}\\
+" "$grub_cfg"
         
         # Set default timeout
         sed -i 's/set timeout=.*/set timeout=10/' "$grub_cfg"
@@ -302,23 +367,33 @@ build_new_iso() {
             log "Updating moved isolinux configuration"
             cp "$moved_isolinux_cfg" "$moved_isolinux_cfg.backup"
             
-            cat > "$moved_isolinux_cfg" << 'EOF'
+            # Dynamically detect kernel paths if not already done
+            if [ -z "$kernel_path" ]; then
+                kernel_path=$(find "$EXTRACT_DIR" \( -name "vmlinuz" -o -name "linux" \) -type f 2>/dev/null | head -1)
+                kernel_path="${kernel_path#$EXTRACT_DIR}"
+            fi
+            if [ -z "$initrd_path" ]; then
+                initrd_path=$(find "$EXTRACT_DIR" \( -name "initrd.gz" -o -name "initrd" \) -type f 2>/dev/null | head -1)
+                initrd_path="${initrd_path#$EXTRACT_DIR}"
+            fi
+            
+            cat > "$moved_isolinux_cfg" << EOF
 # TAKERMAN AI Server Boot Configuration
 default takerman
 prompt 0
 timeout 30
 
 label takerman
-    kernel /install.amd/vmlinuz
-    append vga=788 initrd=/install.amd/initrd.gz auto=true priority=critical preseed/file=/cdrom/preseed.cfg debian-installer/allow_unauthenticated=true quiet splash
+    kernel $kernel_path
+    append initrd=$initrd_path auto=true priority=critical preseed/file=/preseed.cfg debian-installer/allow_unauthenticated=true console-setup/ask_detect=false console-keymaps-at/keymap=us --- quiet
 
 label manual
-    kernel /install.amd/vmlinuz
-    append vga=788 initrd=/install.amd/initrd.gz
+    kernel $kernel_path
+    append initrd=$initrd_path
 
 label rescue
-    kernel /install.amd/vmlinuz
-    append vga=788 initrd=/install.amd/initrd.gz rescue/enable=true
+    kernel $kernel_path
+    append initrd=$initrd_path rescue/enable=true
 EOF
         fi
         
@@ -336,22 +411,27 @@ EOF
     log "Final boot file structure:"
     find "$EXTRACT_DIR" -name "isolinux*" -o -name "*.c32" -o -name "vmlinuz" -o -name "initrd.gz" | sort
     
-    # Verify critical boot files exist
+    # Verify critical boot files exist using dynamic paths
     log "Checking critical boot files:"
-    if [ -f "$EXTRACT_DIR/install.amd/vmlinuz" ]; then
-        log "✓ vmlinuz found"
+    
+    # Re-find kernel and initrd if variables are not set
+    local check_kernel=$(find "$EXTRACT_DIR" \( -name "vmlinuz" -o -name "linux" \) -type f 2>/dev/null | head -1)
+    local check_initrd=$(find "$EXTRACT_DIR" \( -name "initrd.gz" -o -name "initrd" \) -type f 2>/dev/null | head -1)
+    
+    if [ -n "$check_kernel" ] && [ -f "$check_kernel" ]; then
+        log "✓ vmlinuz found at: ${check_kernel#$EXTRACT_DIR}"
     else
         log_error "✗ vmlinuz missing"
     fi
     
-    if [ -f "$EXTRACT_DIR/install.amd/initrd.gz" ]; then
-        log "✓ initrd.gz found"
+    if [ -n "$check_initrd" ] && [ -f "$check_initrd" ]; then
+        log "✓ initrd.gz found at: ${check_initrd#$EXTRACT_DIR}"
     else
         log_error "✗ initrd.gz missing"
     fi
     
     if [ -f "$EXTRACT_DIR/preseed.cfg" ]; then
-        log "✓ preseed.cfg found"
+        log "✓ preseed.cfg found on ISO"
     else
         log_error "✗ preseed.cfg missing"
     fi

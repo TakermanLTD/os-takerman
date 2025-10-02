@@ -1,0 +1,86 @@
+# Prometheus Configuration for TAKERMAN AI Server
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'takerman-ai-server'
+    cluster: 'production'
+
+# Alertmanager configuration (optional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['alertmanager:9093']
+
+# Rule files (optional)
+# rule_files:
+#   - "alerts/*.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          instance: 'prometheus'
+          service: 'monitoring'
+
+  # Node Exporter - System metrics (CPU, RAM, Disk, Network)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['monitoring_node_exporter:9100']
+        labels:
+          instance: 'takerman-ai-server'
+          service: 'system'
+
+  # cAdvisor - Docker container metrics
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['monitoring_cadvisor:8080']
+        labels:
+          instance: 'takerman-ai-server'
+          service: 'docker'
+
+  # Docker daemon metrics (if enabled)
+  - job_name: 'docker'
+    static_configs:
+      - targets: ['172.17.0.1:9323']
+        labels:
+          instance: 'takerman-ai-server'
+          service: 'docker-daemon'
+
+  # NVIDIA GPU metrics (if DCGM exporter is running)
+  # - job_name: 'nvidia-gpu'
+  #   static_configs:
+  #     - targets: ['localhost:9400']
+  #       labels:
+  #         instance: 'takerman-ai-server'
+  #         service: 'gpu'
+
+  # Application metrics
+  - job_name: 'ollama'
+    static_configs:
+      - targets: ['ai_ollama:11434']
+        labels:
+          instance: 'ollama'
+          service: 'ai'
+    metrics_path: '/metrics'
+    scheme: 'http'
+
+  # Portainer metrics (if available)
+  - job_name: 'portainer'
+    static_configs:
+      - targets: ['devops_portainer:9000']
+        labels:
+          instance: 'portainer'
+          service: 'management'
+
+# Remote write configuration (optional - for long-term storage)
+# remote_write:
+#   - url: "http://remote-storage:9201/write"
+
+# Remote read configuration (optional)
+# remote_read:
+#   - url: "http://remote-storage:9201/read"

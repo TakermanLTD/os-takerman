@@ -5,13 +5,14 @@ This project creates a **TAKERMAN** branded, minimal Debian ISO that automatical
 ## 🎯 Overview
 
 The **TAKERMAN AI SERVER** ISO provides:
-- **🔥 Minimal Installation**: Ultra-lean Debian base optimized for AI workloads
+- **🔥 Minimal Installation**: Ultra-lean Debian 12 (Bookworm) base optimized for AI workloads
 - **🎮 NVIDIA GPU Ready**: Latest drivers, CUDA toolkit, and Docker GPU support
-- **🛡️ Root-Only System**: Secure single-user environment with Hakerman91! password
-- **🎨 Custom Branding**: Beautiful night tech boot screen with TAKERMAN logo
+- **🛡️ Root-Only System**: Secure single-user environment with 'password' default password
+- **🎨 Custom Branding**: TAKERMAN branded boot screen and system
 - **📊 Smart Dashboard**: System stats display on login with GPU/CPU/memory info
 - **⚡ Performance Optimized**: Docker, OpenVPN, and AI tools pre-configured
 - **💻 Tak Commands**: 30+ useful aliases starting with 'tak' prefix
+- **🤖 Fully Automated**: Zero-touch installation with preseed automation
 
 ## Files Structure
 
@@ -39,11 +40,11 @@ iso-builder/
 
 ### Dependencies
 The build script will automatically install these if missing:
-- `wget` - For downloading the base Debian ISO
-- `genisoimage` - For creating ISO files
-- `syslinux-utils` - For bootloader configuration
-- `xorriso` - For advanced ISO creation
-- `isolinux` - For BIOS boot support
+- `wget` - For downloading the base Debian mini.iso
+- `xorriso` - For ISO creation and manipulation
+- `isolinux` - For BIOS boot support (isolinux.bin, ldlinux.c32)
+- `cpio` - For initrd extraction and repacking
+- `gzip` - For compressing/decompressing initrd
 
 ## Building the Custom ISO
 
@@ -66,11 +67,11 @@ Before building, you may want to customize:
 # Edit the preseed configuration
 nano configs/preseed.cfg
 
-# Change these lines:
+# Change the root password (currently set to 'password'):
 d-i passwd/root-password password YOUR_ROOT_PASSWORD
 d-i passwd/root-password-again password YOUR_ROOT_PASSWORD
-d-i passwd/user-password password YOUR_USER_PASSWORD
-d-i passwd/user-password-again password YOUR_USER_PASSWORD
+
+# Note: This is a root-only system (no regular user created)
 ```
 
 **Network Configuration**:
@@ -95,18 +96,21 @@ d-i netcfg/get_domain string your-domain.com
 
 The script will:
 1. Check and install dependencies
-2. Download the latest Debian netinst ISO (~400MB)
+2. Download the Debian 12 (Bookworm) mini.iso (~62MB)
 3. Extract and customize the ISO contents
-4. Add the AI setup scripts and preseed configuration
-5. Rebuild the ISO with custom bootloader configuration
-6. Generate checksums for verification
+4. **Dynamically detect kernel and initrd paths** (handles different ISO structures)
+5. **Inject preseed.cfg into initrd** (required for mini.iso automated installation)
+6. Add the AI setup scripts and custom configurations
+7. Configure bootloader for both BIOS (ISOLINUX) and UEFI (GRUB)
+8. Rebuild the ISO with custom bootloader configuration
+9. Generate MD5 and SHA256 checksums for verification
 
 ### 4. Build Output
 
 After successful completion, you'll find in the `build/` directory:
-- `takerman-ai-server-debian-12.7.0-amd64.iso` - The custom ISO
-- `takerman-ai-server-debian-12.7.0-amd64.iso.md5` - MD5 checksum
-- `takerman-ai-server-debian-12.7.0-amd64.iso.sha256` - SHA256 checksum
+- `TAKERMAN-AI-SERVER-debian-12-amd64.iso` - The custom ISO (~62MB)
+- `TAKERMAN-AI-SERVER-debian-12-amd64.iso.md5` - MD5 checksum
+- `TAKERMAN-AI-SERVER-debian-12-amd64.iso.sha256` - SHA256 checksum
 
 ## Using the Custom ISO
 
@@ -115,7 +119,7 @@ After successful completion, you'll find in the `build/` directory:
 **USB Drive (Linux)**:
 ```bash
 # Replace /dev/sdX with your USB drive device
-sudo dd if=takerman-ai-server-debian-12.7.0-amd64.iso of=/dev/sdX bs=4M status=progress
+sudo dd if=build/TAKERMAN-AI-SERVER-debian-12-amd64.iso of=/dev/sdX bs=4M status=progress
 sync
 ```
 
@@ -137,7 +141,7 @@ After the installation completes:
 
 **🔐 Root Access Credentials**:
 - Username: `root`
-- Password: `Hakerman91!`
+- Password: `password` (⚠️ **CHANGE THIS IMMEDIATELY AFTER FIRST LOGIN**)
 
 **🌐 Default Services**:
 - SSH: Port 22 (password authentication enabled)
@@ -149,7 +153,7 @@ After the installation completes:
 ```bash
 # SSH to your server
 ssh root@your-server-ip
-# Password: Hakerman91!
+# Password: password (change this immediately!)
 
 # You'll immediately see the TAKERMAN dashboard with system stats!
 ```
@@ -248,6 +252,14 @@ chmod +x build_custom_iso.sh
 - Verify USB/CD creation process
 - Check BIOS/UEFI boot order
 - Try different USB creation tools
+- **For VirtualBox**: Use "Expert Mode" during VM creation, NOT "Unattended Install"
+  - Unattended install conflicts with preseed automation
+  - Let the ISO handle the automated installation
+
+**Common Boot Errors (Already Fixed in Build Script)**:
+- ❌ "no such file or directory /install.amd/vmlinuz" - Fixed via dynamic kernel path detection
+- ❌ "failed to retrieve preconfiguration file" - Fixed via preseed injection into initrd
+- ❌ "cannot mount /mnt/fb0" - Fixed by removing VGA framebuffer parameter
 
 **Network Issues During Installation**:
 - Ensure network cable is connected
@@ -288,16 +300,19 @@ sudo ufw status
 ## Security Considerations
 
 ### Default Settings
-- SSH password authentication is disabled
+- ⚠️ **Default password is 'password' - EXTREMELY WEAK**
+- SSH password authentication is enabled by default
 - Firewall (UFW) is enabled with limited ports
 - Root login is allowed initially but should be disabled after setup
-- Default passwords are weak and MUST be changed
+- **CRITICAL**: Change the default password immediately after first login
 
 ### Hardening Steps
-1. **Change Default Passwords**:
+1. **🚨 IMMEDIATELY Change Default Password**:
 ```bash
-sudo passwd root
-sudo passwd takerman
+# Change root password from 'password' to something secure
+passwd root
+
+# Note: No regular user exists (root-only system)
 ```
 
 2. **Disable Root SSH** (after setting up key authentication):

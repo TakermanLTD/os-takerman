@@ -161,6 +161,80 @@ services:
                 value: 1
     restart: unless-stopped
 
+  # Monitoring Stack
+  monitoring_prometheus:
+    <<: [ *timezone ]
+    image: prom/prometheus:latest
+    container_name: monitoring_prometheus
+    ports:
+      - 9090:9090
+    volumes:
+      - /root/volumes/monitoring/prometheus/config:/etc/prometheus
+      - /root/volumes/monitoring/prometheus/data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+
+  monitoring_grafana:
+    <<: [ *timezone ]
+    image: grafana/grafana:latest
+    container_name: monitoring_grafana
+    ports:
+      - 3001:3000
+    volumes:
+      - /root/volumes/monitoring/grafana/data:/var/lib/grafana
+      - /root/volumes/monitoring/grafana/config:/etc/grafana
+      - /root/volumes/monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - /root/volumes/monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    environment:
+      GF_SECURITY_ADMIN_USER: takerman
+      GF_SECURITY_ADMIN_PASSWORD: Hakerman91!
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource,grafana-piechart-panel
+      GF_SERVER_ROOT_URL: http://grafana.takerman.net
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    depends_on:
+      - monitoring_prometheus
+    restart: unless-stopped
+
+  monitoring_node_exporter:
+    <<: [ *timezone ]
+    image: prom/node-exporter:latest
+    container_name: monitoring_node_exporter
+    ports:
+      - 9100:9100
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    restart: unless-stopped
+
+  monitoring_cadvisor:
+    <<: [ *timezone ]
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: monitoring_cadvisor
+    ports:
+      - 8080:8080
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg
+    restart: unless-stopped
+
 volumes:
   jupyter_config:
     driver: local
