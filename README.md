@@ -96,21 +96,25 @@ d-i netcfg/get_domain string your-domain.com
 
 The script will:
 1. Check and install dependencies
-2. Download the Debian 12 (Bookworm) mini.iso (~62MB)
+2. Download the Debian 12 (Bookworm) **netinst ISO** (~700MB with base packages)
 3. Extract and customize the ISO contents
 4. **Dynamically detect kernel and initrd paths** (handles different ISO structures)
-5. **Inject preseed.cfg into initrd** (required for mini.iso automated installation)
+5. **Inject preseed.cfg into initrd** (required for automated installation)
 6. Add the AI setup scripts and custom configurations
 7. Configure bootloader for both BIOS (ISOLINUX) and UEFI (GRUB)
 8. Rebuild the ISO with custom bootloader configuration
 9. Generate MD5 and SHA256 checksums for verification
 
+**📦 Offline Installation**: The netinst ISO includes base system packages (~650MB), allowing Debian installation **WITHOUT internet connection**. Docker images can be downloaded online after OS installation completes.
+
 ### 4. Build Output
 
 After successful completion, you'll find in the `build/` directory:
-- `TAKERMAN-AI-SERVER-debian-12-amd64.iso` - The custom ISO (~62MB)
+- `TAKERMAN-AI-SERVER-debian-12-amd64.iso` - The custom ISO (~700MB)
 - `TAKERMAN-AI-SERVER-debian-12-amd64.iso.md5` - MD5 checksum
 - `TAKERMAN-AI-SERVER-debian-12-amd64.iso.sha256` - SHA256 checksum
+
+**💡 Note**: The ISO includes base Debian packages for offline installation. Total size is ~700MB (netinst) instead of ~62MB (mini.iso).
 
 ## Using the Custom ISO
 
@@ -260,6 +264,11 @@ chmod +x build_custom_iso.sh
 - ❌ "no such file or directory /install.amd/vmlinuz" - Fixed via dynamic kernel path detection
 - ❌ "failed to retrieve preconfiguration file" - Fixed via preseed injection into initrd
 - ❌ "cannot mount /mnt/fb0" - Fixed by removing VGA framebuffer parameter
+
+**Offline Installation**:
+- ✅ Base Debian system installs **WITHOUT internet** (uses netinst ISO with included packages)
+- ✅ Post-install AI setup requires internet for Docker images and NVIDIA drivers
+- 💡 Alternative: Pre-download Docker images using `docker/save_images_offline.sh` for fully offline setup
 
 **Network Issues During Installation**:
 - Ensure network cable is connected

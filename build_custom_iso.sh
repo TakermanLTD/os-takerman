@@ -5,10 +5,10 @@
 
 set -e
 
-# Configuration - Use latest Debian 12 (Bookworm)
+# Configuration - Use latest Debian (currently 13 Trixie, or fallback to 12 Bookworm)
 DEBIAN_ARCH="amd64"
-ISO_NAME="debian-12-netinst-${DEBIAN_ARCH}.iso"
-CUSTOM_ISO_NAME="TAKERMAN-AI-SERVER-debian-12-${DEBIAN_ARCH}.iso"
+ISO_NAME="debian-netinst-${DEBIAN_ARCH}.iso"
+CUSTOM_ISO_NAME="TAKERMAN-AI-SERVER-debian-${DEBIAN_ARCH}.iso"
 # Directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR"
@@ -79,15 +79,16 @@ download_debian_iso() {
     
     cd "$BUILD_DIR"
     
-    # Array of possible Debian ISO URLs to try
+    # Array of possible Debian netinst ISO URLs to try (full offline-capable ISOs)
+    # netinst (~700MB) includes base system packages for offline installation
+    # Does NOT include mini.iso (~62MB) which requires internet during installation
     local urls=(
+        "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-13.1.0-amd64-netinst.iso"
+        "https://cdimage.debian.org/debian-cd/13.1.0/amd64/iso-cd/debian-13.1.0-amd64-netinst.iso"
         "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.8.0-amd64-netinst.iso"
         "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.7.0-amd64-netinst.iso" 
-        "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.6.0-amd64-netinst.iso"
-        "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-amd64-netinst.iso"
-        "https://deb.debian.org/debian/dists/bookworm/main/installer-amd64/current/images/netboot/mini.iso"
-        "https://cdimage.debian.org/debian-cd/12.8.0/amd64/iso-cd/debian-12.8.0-amd64-netinst.iso"
         "https://cdimage.debian.org/debian-cd/12.7.0/amd64/iso-cd/debian-12.7.0-amd64-netinst.iso"
+        "https://cdimage.debian.org/debian-cd/12.8.0/amd64/iso-cd/debian-12.8.0-amd64-netinst.iso"
     )
     
     local success=false
@@ -95,8 +96,10 @@ download_debian_iso() {
     for url in "${urls[@]}"; do
         log "Trying: $url"
         
-        if wget -c "$url" -O "$ISO_NAME" --timeout=30 --tries=2; then
+        # Increase timeout and retries for large files (~800MB)
+        if wget -c "$url" -O "$ISO_NAME" --timeout=60 --tries=3 --continue; then
             success=true
+            log_success "Download completed from: $url"
             break
         else
             log_warning "Failed to download from: $url"
@@ -110,14 +113,14 @@ download_debian_iso() {
         log ""
         log "🔧 Manual download options:"
         log "  1. Visit: https://www.debian.org/distrib/netinst"
-        log "  2. Download any Debian 12 (Bookworm) netinst ISO"
+        log "  2. Download Debian 13 (Trixie) or 12 (Bookworm) netinst ISO"
         log "  3. Place it as: $BUILD_DIR/$ISO_NAME"
         log "  4. Run this script again"
         log ""
         log "📋 Suggested filenames to look for:"
-        log "  - debian-12.8.0-amd64-netinst.iso"
-        log "  - debian-12.7.0-amd64-netinst.iso" 
-        log "  - debian-12.x.x-amd64-netinst.iso"
+        log "  - debian-13.1.0-amd64-netinst.iso (current)"
+        log "  - debian-12.7.0-amd64-netinst.iso (stable)" 
+        log "  - debian-12.x.x-amd64-netinst.iso (any 12.x version)"
         exit 1
     fi
     
@@ -219,8 +222,8 @@ customize_iso() {
     log_success "Found kernel at: $kernel_path"
     log_success "Found initrd at: $initrd_path"
     
-    # INJECT PRESEED INTO INITRD (required for mini.iso)
-    log "Injecting preseed into initrd for mini.iso compatibility..."
+    # INJECT PRESEED INTO INITRD (required for netinst/mini.iso compatibility)
+    log "Injecting preseed into initrd for automated installation..."
     local initrd_full_path="$EXTRACT_DIR$initrd_path"
     local initrd_temp="$BUILD_DIR/initrd_preseed"
     
