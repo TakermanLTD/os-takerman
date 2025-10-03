@@ -10,8 +10,18 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-PURPLE='\033[0;35m'
-CYAN='\033[0;36m'
+PURPLE='\0# Run first boot setup if needed (interactive password change)
+if [ -f "/var/lib/takerman-password-change-needed" ] && [ -t 0 ]; then
+    # Source the first boot setup functions
+    if [ -f "/root/.takerman/first_boot_setup.sh" ]; then
+        source /root/.takerman/first_boot_setup.sh
+        force_password_change
+    else
+        echo -e "\\033[1;31m⚠️  SECURITY: Please change default password with 'passwd root'\\033[0m"
+    fi
+fi
+
+# Show system stats on login='\033[0;36m'
 WHITE='\033[1;37m'
 NC='\033[0m' # No Color
 
@@ -267,6 +277,15 @@ if [ -f ~/.takerman_aliases ]; then
     . ~/.takerman_aliases
 fi
 
+# Ensure aliases are available in all new bash sessions
+if ! grep -q "source.*takerman_aliases" /etc/bash.bashrc 2>/dev/null; then
+    echo "" >> /etc/bash.bashrc
+    echo "# TAKERMAN AI Server aliases" >> /etc/bash.bashrc
+    echo "if [ -f /root/.takerman_aliases ]; then" >> /etc/bash.bashrc
+    echo "    source /root/.takerman_aliases" >> /etc/bash.bashrc
+    echo "fi" >> /etc/bash.bashrc
+fi
+
 # Environment variables
 export EDITOR=nano
 export TERM=xterm-256color
@@ -277,6 +296,19 @@ export PATH="/usr/local/bin:$PATH"
 # CUDA environment
 export CUDA_VISIBLE_DEVICES=all
 export NVIDIA_VISIBLE_DEVICES=all
+
+# Force password change on first login if still using default
+if [ -f "/var/lib/takerman-password-change-needed" ]; then
+    echo -e "\033[1;31m⚠️  SECURITY ALERT: You must change the default password now!\033[0m"
+    echo -e "\033[1;33mEnter a new secure password for root account:\033[0m"
+    if passwd root; then
+        rm -f /var/lib/takerman-password-change-needed
+        echo -e "\033[1;32m✅ Password changed successfully!\033[0m"
+    else
+        echo -e "\033[1;31m❌ Password change failed. You will be prompted again on next login.\033[0m"
+    fi
+    echo
+fi
 
 # Show system stats on login
 if [ -t 0 ] && [ -z "$TAKERMAN_STATS_SHOWN" ]; then
@@ -545,6 +577,9 @@ APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
 EOF
 
+# Create password change reminder flag (will be removed after password change)
+touch /var/lib/takerman-password-change-needed
+
 # Create startup log
 echo "TAKERMAN AI Server initialized at $(date)" >> /var/log/takerman/ai-server.log
 chmod 644 /var/log/takerman/ai-server.log
@@ -557,6 +592,42 @@ if [ -f "/root/server/scripts/start_docker_services.sh" ]; then
 else
     log_warning "Docker services startup script not found, services will need to be started manually"
 fi
+
+# Create symbolic links for key TAKERMAN commands to ensure they work as actual commands
+log "Creating TAKERMAN command links..."
+mkdir -p /usr/local/bin
+
+# Create wrapper scripts for key commands
+cat > /usr/local/bin/takstats << 'EOF'
+#!/bin/bash
+/usr/local/bin/takerman-stats "$@"
+EOF
+
+cat > /usr/local/bin/takgpu << 'EOF'
+#!/bin/bash
+nvidia-smi "$@"
+EOF
+
+cat > /usr/local/bin/takdocker << 'EOF'
+#!/bin/bash
+docker "$@"
+EOF
+
+cat > /usr/local/bin/takps << 'EOF'
+#!/bin/bash
+docker ps "$@"
+EOF
+
+cat > /usr/local/bin/takhelp << 'EOF'
+#!/bin/bash
+source /root/.takerman_aliases 2>/dev/null
+takhelp "$@"
+EOF
+
+# Make them executable
+chmod +x /usr/local/bin/tak*
+
+log_success "TAKERMAN commands are now available system-wide"
 
 log_success "🎉 TAKERMAN AI Server setup completed successfully!"
 log "🔥 System is ready for high-performance AI workloads!"

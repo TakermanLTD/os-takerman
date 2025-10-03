@@ -34,6 +34,27 @@ TimeoutStartSec=1800
 WantedBy=multi-user.target
 EOF
 
+# Create systemd service for first boot security setup
+cat > /etc/systemd/system/takerman-first-boot.service << 'EOF'
+[Unit]
+Description=TAKERMAN First Boot Security Setup
+After=takerman-ai-setup.service
+Requires=takerman-ai-setup.service
+ConditionPathExists=/var/lib/takerman-setup-completed
+
+[Service]
+Type=oneshot
+ExecStart=/tmp/custom-install/first_boot_setup.sh
+StandardInput=tty-force
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty1
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 # Create a wrapper script that handles the setup and cleanup
 cat > /tmp/custom-install/takerman_setup_wrapper.sh << 'EOF'
 #!/bin/bash
@@ -77,8 +98,9 @@ if [ -f "/tmp/custom-install/../branding/setup-plymouth.sh" ]; then
     chmod +x /tmp/setup-plymouth.sh
 fi
 
-# Enable the service (will run on next boot)
+# Enable the services (will run on next boot)
 systemctl enable takerman-ai-setup.service
+systemctl enable takerman-first-boot.service
 
 # Disable unnecessary services for minimal system
 systemctl mask bluetooth.service

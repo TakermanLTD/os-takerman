@@ -10,7 +10,7 @@ Complete guide for using and managing your TAKERMAN AI Server.
 
 | Service | Username | Password | Port |
 |---------|----------|----------|------|
-| **Root SSH** | `root` | `password` | 22 |
+| **Root SSH** | `root` | `TakeRm@n2024!Temp` | 22 |
 | **N8N Workflow** | `takerman` | `Hakerman91!` | 5103 |
 
 ### 🚨 First Login Steps
@@ -18,11 +18,10 @@ Complete guide for using and managing your TAKERMAN AI Server.
 ```bash
 # 1. SSH into your server
 ssh root@YOUR_SERVER_IP
-# Enter password: password
+# Enter temporary password: TakeRm@n2024!Temp
 
-# 2. IMMEDIATELY change root password
-passwd root
-# Enter new secure password twice
+# 2. You will be automatically prompted to change the password
+# Follow the on-screen instructions to set a secure password
 
 # 3. View system dashboard
 takstats

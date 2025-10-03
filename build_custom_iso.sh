@@ -525,12 +525,12 @@ print_summary() {
     echo
     echo -e "${YELLOW}🔐 TAKERMAN AI Server Access:${NC}"
     echo "  - Username: root"
-    echo "  - Password: Hakerman91!"
+    echo "  - Temporary Password: TakeRm@n2024!Temp (you'll be prompted to change this)"
     echo "  - SSH: Port 22 (enabled)"
     echo "  - Jupyter Lab: http://server-ip:8888"
     echo "  - TensorBoard: http://server-ip:6006"
     echo
-    echo -e "${RED}⚠️  SECURITY:${NC} This password is for initial setup only!"
+    echo -e "${RED}⚠️  SECURITY:${NC} You will be forced to change this password on first login!"
     echo -e "${YELLOW}💡 Tip:${NC} Use 'takstats' for system overview and 'takhelp' for commands"
 }
 
