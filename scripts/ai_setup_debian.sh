@@ -10,16 +10,8 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-PURPLE='\0# Run first boot setup if needed (interactive password change)
-if [ -f "/var/lib/takerman-password-change-needed" ] && [ -t 0 ]; then
-    # Source the first boot setup functions
-    if [ -f "/root/.takerman/first_boot_setup.sh" ]; then
-        source /root/.takerman/first_boot_setup.sh
-        force_password_change
-    else
-        echo -e "\\033[1;31m⚠️  SECURITY: Please change default password with 'passwd root'\\033[0m"
-    fi
-fi
+PURPLE='\0# Password was set during installation - no first boot change needed
+# User already chose their secure password during the installation process
 
 # Show system stats on login='\033[0;36m'
 WHITE='\033[1;37m'
@@ -577,8 +569,8 @@ APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
 EOF
 
-# Create password change reminder flag (will be removed after password change)
-touch /var/lib/takerman-password-change-needed
+# No longer needed - user sets password during installation
+# touch /var/lib/takerman-password-change-needed
 
 # Create startup log
 echo "TAKERMAN AI Server initialized at $(date)" >> /var/log/takerman/ai-server.log
