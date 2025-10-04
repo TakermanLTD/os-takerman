@@ -1,0 +1,59 @@
+# Use official NVIDIA CUDA runtime base image (with cuDNN)
+FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV CUDA_VISIBLE_DEVICES=0
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+# Install OS dependencies
+RUN apt-get update && \
+    apt-get install -y curl cron wget python3 python3-pip git ffmpeg wget && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set up working directory
+WORKDIR /opt/ComfyUI
+
+# Install latest ComfyUI from the official repo
+RUN git clone https://github.com/comfyanonymous/ComfyUI.git . && \
+    pip3 install --upgrade pip
+
+# Install PyTorch & other dependencies with CUDA 12.1 support explicitly
+RUN pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Install Python Ollama client for ComfyUI integration
+RUN pip3 install ollama
+
+RUN pip3 install -r requirements.txt
+
+# Install ComfyUI-Manager node
+RUN git clone https://github.com/ltdrdata/ComfyUI-Manager.git custom_nodes/ComfyUI-Manager && \
+    pip3 install -r custom_nodes/ComfyUI-Manager/requirements.txt
+
+# Install VideoHelperSuite node
+# RUN cd custom_nodes && \
+#     git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git && \
+#     pip3 install -r ComfyUI-VideoHelperSuite/requirements.txt
+
+# Install DiffRhythm node
+# RUN cd custom_nodes && \
+#     git clone https://github.com/billwuhao/ComfyUI_DiffRhythm.git && \
+#     pip3 install -r ComfyUI_DiffRhythm/requirements.txt
+
+# (Optional) Install Yvann-Nodes for audio-reactive video
+# RUN cd custom_nodes && \
+#     git clone https://github.com/smthemex/ComfyUI_YuE.git
+
+# Expose the default ComfyUI port
+EXPOSE 8188
+
+# Use root user
+USER root
+
+WORKDIR /opt/ComfyUI
+
+# Start ComfyUI - optimized for RTX 3090 Ti 24GB
+CMD ["python3", "main.py", "--listen", "0.0.0.0", "--port", "8188", "--highvram"]

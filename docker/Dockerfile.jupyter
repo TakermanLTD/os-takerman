@@ -1,0 +1,145 @@
+# Use the latest Jupyter TensorFlow notebook with CUDA support
+FROM jupyter/tensorflow-notebook:latest
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV JUPYTER_ENABLE_LAB=yes
+
+# Switch to root for installations
+USER root
+
+# Install system dependencies for extensions and development
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    build-essential \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Remove existing Node.js and install Node.js 20.x cleanly
+RUN apt-get update && apt-get remove -y nodejs npm libnode-dev \
+    && apt-get autoremove -y \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install JupyterLab and core extensions first
+RUN pip install --no-cache-dir --upgrade \
+    pip \
+    setuptools \
+    wheel
+
+RUN pip install --no-cache-dir \
+    jupyterlab==4.2.* \
+    notebook \
+    nbconvert \
+    jupyterlab-widgets \
+    ipywidgets
+
+# Install Python LSP and development tools
+RUN pip install --no-cache-dir \
+    jupyterlab-lsp \
+    python-lsp-server[all] \
+    jupyterlab-code-formatter \
+    black \
+    isort \
+    flake8
+
+# Install the requested extensions and additional useful ones
+RUN pip install --no-cache-dir \
+    jupyterlab-git \
+    nbdime
+
+# Install PyTorch with CUDA support (compatible with current setup)
+RUN pip install --no-cache-dir \
+    torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Install ML/AI libraries in organized chunks
+RUN pip install --no-cache-dir \
+    transformers \
+    accelerate \
+    datasets \
+    huggingface-hub \
+    diffusers
+
+RUN pip install --no-cache-dir \
+    opencv-python \
+    pillow \
+    matplotlib \
+    seaborn \
+    plotly \
+    bokeh \
+    altair
+
+RUN pip install --no-cache-dir \
+    scikit-learn \
+    pandas \
+    numpy \
+    scipy \
+    sympy \
+    networkx \
+    statsmodels
+
+# Install additional useful packages for AI/ML development
+RUN pip install --no-cache-dir \
+    wandb \
+    tensorboard \
+    gradio \
+    streamlit \
+    fastapi \
+    uvicorn
+
+# Install additional npm packages for development
+RUN npm install -g yarn
+
+# Build JupyterLab with all extensions
+RUN jupyter lab build --minimize=False && \
+    jupyter lab clean && \
+    npm cache clean --force
+
+# Configure JupyterLab for root user with better security
+RUN mkdir -p /root/.jupyter
+
+# Create a more secure configuration
+RUN cat > /root/.jupyter/jupyter_lab_config.py << 'EOF'
+c.ServerApp.ip = '0.0.0.0'
+c.ServerApp.port = 8888
+c.ServerApp.open_browser = False
+c.ServerApp.allow_root = True
+c.ServerApp.token = ''
+c.ServerApp.password = ''
+c.ServerApp.allow_origin = '*'
+c.ServerApp.disable_check_xsrf = True
+c.ServerApp.trust_xheaders = True
+c.ExtensionApp.check_for_updates = False
+c.LabApp.check_for_updates = False
+
+# Enable extensions
+c.LabServerApp.collaborative = False
+c.ServerApp.jpserver_extensions = {
+'jupyterlab_git': True,
+'nbdime': True,
+'jupyterlab_code_formatter': True
+}
+EOF
+
+# Set up git configuration (will be overridden by volume mount)
+RUN git config --global user.name "TakermanLTD" && \
+    git config --global user.email "contact@takerman.net" && \
+    git config --global init.defaultBranch main
+
+# Create workspace directory with proper permissions
+RUN mkdir -p /workspace && \
+    chown -R root:root /workspace && \
+    chmod -R 755 /workspace
+
+# Enable nbdime for better notebook diffs
+RUN nbdime config-git --enable --global
+
+WORKDIR /workspace
+USER root
+
+EXPOSE 8888
+
+# Use a more robust startup command
+CMD ["jupyter", "lab", "--config=/root/.jupyter/jupyter_lab_config.py", "--allow-root", "--no-browser", "--ip=0.0.0.0", "--port=8888"]

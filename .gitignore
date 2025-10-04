@@ -1,0 +1,38 @@
+build/*
+
+# Security - Never commit tokens or credentials
+.env
+.env.local
+.env.production
+github_token
+github_pat
+*.token
+*.pat
+
+# SSH Keys
+id_rsa
+id_rsa.pub
+*.pem
+*.key
+
+# Build artifacts
+*.iso
+*.md5
+*.sha256
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# IDE files
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
