@@ -1,7 +1,23 @@
 #!/bin/bash
 
 # TAKERMAN AI Server - Docker Container Startup Script
-# Starts all AI services after OS installation completion
+# Starts all AI services after OS installati    # Try multiple locations for docker-compose.yml
+    local compose_dir=""
+    if [ -f "/root/docker-compose.yml" ]; then
+        compose_dir="/root"
+    elif [ -f "/root/server/docker-compose.yml" ]; then
+        compose_dir="/root/server"
+    else
+        log_error "docker-compose.yml not found in /root or /root/server"
+        return 1
+    fi
+    
+    cd "$compose_dir" || {
+        log_error "Could not change to directory: $compose_dir"
+        return 1
+    }
+    
+    log "Using docker-compose.yml from: $compose_dir"tion
 
 set -e
 

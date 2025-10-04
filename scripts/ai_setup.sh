@@ -82,7 +82,7 @@ chmod 600 /root/.ssh/id_rsa
 chmod 644 /root/.ssh/id_rsa.pub
 cat /root/server/dev/ssh/.bashrc >> /root/.bashrc
 nano /etc/ssh/sshd_config
-echo "Port 1991" >> /etc/ssh/sshd_config
+echo "Port 22" >> /etc/ssh/sshd_config
 echo "PasswordAuthentication no" >> /etc/ssh/sshd_config
 echo "PermitRootLogin no" >> /etc/ssh/sshd_config
 echo "AllowUsers root" >> /etc/ssh/sshd_config
@@ -98,7 +98,7 @@ cp /root/server/dev/configs/rclone.conf /root/.config/rclone/
 bash /home/takerman/openvpn-install.sh
 
 # 3.8 ufw
-ufw allow 1991/tcp
+ufw allow 22/tcp
 ufw allow 443/tcp
 ufw allow 1194/udp
 ufw enable

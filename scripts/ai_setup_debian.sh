@@ -78,16 +78,42 @@ sed -i 's/main$/main contrib non-free non-free-firmware/' /etc/apt/sources.list
 # Update package lists
 apt-get update
 
-log "Installing minimal AI server packages..."
+log "Ensuring all required packages are installed..."
+
+# Essential system packages (install if missing)
+ESSENTIAL_PACKAGES=(
+    "openssh-server" "curl" "wget" "git" "htop" "iotop" "iftop"
+    "python3" "python3-pip" "python3-venv"
+    "ufw" "fail2ban" 
+    "vim" "nano" "screen" "tmux" "tree" "less" "mc"
+    "zip" "unzip" "rsync" "sudo"
+    "net-tools" "iputils-ping" "traceroute" "dnsutils" 
+    "nmap" "netcat-openbsd" "tcpdump"
+    "iperf3" "lm-sensors" "smartmontools"
+    "bash-completion" "man-db" "locate"
+    "psmisc" "procps" "lsof" "strace"
+    "file" "whois" "openssl"
+)
+
+# Check and install missing packages
+MISSING_PACKAGES=()
+for package in "${ESSENTIAL_PACKAGES[@]}"; do
+    if ! dpkg -l | grep -q "^ii  $package "; then
+        MISSING_PACKAGES+=("$package")
+    fi
+done
+
+if [ ${#MISSING_PACKAGES[@]} -gt 0 ]; then
+    log_warning "Installing missing packages: ${MISSING_PACKAGES[*]}"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y "${MISSING_PACKAGES[@]}"
+else
+    log_success "All essential packages are already installed"
+fi
+
+# Install Docker and NVIDIA packages (these need special repos)
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    openssh-server curl wget git htop nvtop iotop \
-    python3 python3-pip python3-venv \
     docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin \
-    nvidia-driver nvidia-settings nvidia-smi nvidia-container-toolkit \
-    ufw fail2ban \
-    vim nano screen tmux tree \
-    net-tools iperf3 \
-    lm-sensors smartmontools
+    nvidia-driver nvidia-settings nvidia-smi nvidia-container-toolkit
 
 # Install OpenVPN
 log "Installing OpenVPN server..."
@@ -133,6 +159,7 @@ alias takcompose='docker-compose'
 alias takup='docker-compose up -d'
 alias takdown='docker-compose down'
 alias taklogs='docker-compose logs -f'
+alias takservices='/root/takerman_services.sh'
 
 # System Monitoring
 alias takstats='takerman-stats'
@@ -396,19 +423,23 @@ chmod 700 /root/.ssh
 # Create SSH configuration for security
 cat > /etc/ssh/sshd_config << 'EOF'
 # TAKERMAN AI Server SSH Configuration
-Port 1991
+Port 22
 Protocol 2
 HostKey /etc/ssh/ssh_host_rsa_key
 HostKey /etc/ssh/ssh_host_ecdsa_key
 HostKey /etc/ssh/ssh_host_ed25519_key
 
-# Authentication
+# Authentication - Allow root login from anywhere
 PermitRootLogin yes
 PasswordAuthentication yes
 PubkeyAuthentication yes
 AuthorizedKeysFile .ssh/authorized_keys
 ChallengeResponseAuthentication no
 UsePAM yes
+
+# Allow connections from anywhere
+AllowUsers root
+#AllowGroups ssh
 
 # Security settings
 ClientAliveInterval 300
@@ -486,7 +517,7 @@ EOF
 # 3.8 Configure enhanced firewall with fail2ban
 log "Setting up advanced security..."
 ufw --force enable
-ufw allow 1991/tcp      # SSH
+ufw allow 22/tcp        # SSH
 ufw allow 443/tcp      # HTTPS  
 ufw allow 80/tcp       # HTTP (for nginx proxy)
 ufw allow 5194/udp     # OpenVPN
@@ -519,6 +550,53 @@ EOF
 systemctl enable fail2ban
 systemctl start fail2ban
 
+# Verify critical services are installed and running
+log "Verifying critical system services..."
+
+# Check UFW
+if command -v ufw >/dev/null 2>&1; then
+    log_success "UFW firewall is installed"
+    ufw status
+else
+    log_error "UFW not found - installing now"
+    apt-get update && apt-get install -y ufw
+    ufw --force enable
+fi
+
+# Check fail2ban
+if systemctl is-active --quiet fail2ban; then
+    log_success "fail2ban is running"
+else
+    log_warning "fail2ban not running - attempting to start"
+    systemctl enable fail2ban
+    systemctl start fail2ban
+fi
+
+# Check Docker
+if command -v docker >/dev/null 2>&1; then
+    log_success "Docker is installed"
+    systemctl enable docker
+    systemctl start docker
+else
+    log_error "Docker not found - this is critical!"
+fi
+
+# Check NVIDIA drivers
+if command -v nvidia-smi >/dev/null 2>&1; then
+    log_success "NVIDIA drivers are installed"
+else
+    log_warning "NVIDIA drivers not found - GPU features may not work"
+fi
+
+# Check SSH
+if systemctl is-active --quiet ssh; then
+    log_success "SSH service is running"
+else
+    log_warning "SSH not running - attempting to start"
+    systemctl enable ssh
+    systemctl start ssh
+fi
+
 # 3.9 Create AI workspace directories (containers will handle volume creation)
 log "Setting up base directories for Docker volumes..."
 mkdir -p /root/volumes
@@ -531,6 +609,13 @@ if [ -f "/root/server/docker-compose.yml" ]; then
     log_success "Docker Compose configuration ready"
 else
     log_warning "Docker Compose file not found in server repo"
+fi
+
+# Copy service management script
+if [ -f "/tmp/custom-install/takerman_services.sh" ]; then
+    cp /tmp/custom-install/takerman_services.sh /root/takerman_services.sh
+    chmod +x /root/takerman_services.sh
+    log_success "TAKERMAN services management script ready"
 fi
 
 # 4. System optimization for AI workloads
@@ -557,6 +642,30 @@ EOF
 
 systemctl enable gpu-performance.service
 
+# Create service to auto-start Docker containers on boot
+log "Creating Docker auto-start service..."
+cat > /etc/systemd/system/takerman-docker-start.service << 'EOF'
+[Unit]
+Description=TAKERMAN Docker Services Auto-Start
+After=docker.service
+Requires=docker.service
+ConditionPathExists=/root/docker-compose.yml
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root
+ExecStartPre=/bin/sleep 30
+ExecStart=/usr/bin/docker compose up -d
+RemainAfterExit=yes
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl enable takerman-docker-start.service
+
 # 5. Final system configuration
 log "Finalizing TAKERMAN AI Server setup..."
 
@@ -578,11 +687,76 @@ chmod 644 /var/log/takerman/ai-server.log
 
 # Start Docker services
 log "Starting TAKERMAN AI Docker services..."
-if [ -f "/root/server/scripts/start_docker_services.sh" ]; then
-    chmod +x /root/server/scripts/start_docker_services.sh
-    /root/server/scripts/start_docker_services.sh
+
+# Ensure docker-compose.yml is in the right location
+if [ -f "/root/server/docker-compose.yml" ]; then
+    cp /root/server/docker-compose.yml /root/docker-compose.yml
+elif [ -f "/tmp/custom-install/docker-compose.yml" ]; then
+    cp /tmp/custom-install/docker-compose.yml /root/docker-compose.yml
+fi
+
+# Check if we have the docker-compose file
+if [ -f "/root/docker-compose.yml" ]; then
+    log "Found docker-compose.yml, starting services..."
+    cd /root
+    
+    # Wait for Docker to be fully ready
+    log "Waiting for Docker daemon to be ready..."
+    timeout=60
+    while [ $timeout -gt 0 ]; do
+        if docker info >/dev/null 2>&1; then
+            break
+        fi
+        sleep 2
+        timeout=$((timeout - 2))
+    done
+    
+    if docker info >/dev/null 2>&1; then
+        log_success "Docker daemon is ready"
+        
+        # Create volume directories
+        log "Creating volume directories..."
+        mkdir -p /root/volumes/{devops,monitoring,ai}
+        mkdir -p /root/volumes/devops/{portainer,nginx-proxy-manager/{data,letsencrypt}}
+        mkdir -p /root/volumes/monitoring/dozzle
+        mkdir -p /root/volumes/ai/{generated/{videos/generated,pictures/artificialpics},ollama,comfyui/{models,output,input,custom_nodes,config},openwebui,n8n/{data,local_files,backups/{daily,weekly,monthly,emergency}},jupyter/{notebooks,models,config}}
+        
+        # Start essential services first
+        log "Starting essential infrastructure services..."
+        if docker compose up -d devops_portainer monitoring_dozzle 2>/dev/null; then
+            log_success "Infrastructure services started"
+        else
+            log_warning "Some infrastructure services failed to start"
+        fi
+        
+        # Wait a moment for infrastructure
+        sleep 5
+        
+        # Start AI services
+        log "Starting AI services..."
+        if docker compose up -d ai_ollama ai_comfyui ai_openwebui tool_jupyter 2>/dev/null; then
+            log_success "AI services started"
+        else
+            log_warning "Some AI services failed to start"
+        fi
+        
+        # Show running containers
+        log "Docker services status:"
+        docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+        
+    else
+        log_warning "Docker daemon not ready, services will need to be started manually"
+        log "Run 'docker compose up -d' in /root directory after reboot"
+    fi
 else
-    log_warning "Docker services startup script not found, services will need to be started manually"
+    log_warning "docker-compose.yml not found, services will need to be started manually"
+fi
+
+# Also run the dedicated startup script if available
+if [ -f "/root/server/scripts/start_docker_services.sh" ]; then
+    log "Running additional Docker services script..."
+    chmod +x /root/server/scripts/start_docker_services.sh
+    /root/server/scripts/start_docker_services.sh || log_warning "Additional Docker services script had issues"
 fi
 
 # Create symbolic links for key TAKERMAN commands to ensure they work as actual commands
@@ -626,7 +800,7 @@ log "🔥 System is ready for high-performance AI workloads!"
 log "🚀 All Docker services are starting up!"
 log ""
 log "📊 Access your services:"
-log "   SSH: ssh root@<server-ip>:1991"
+log "   SSH: ssh root@<server-ip>"
 log "   Jupyter: http://<server-ip>:5104 (Token: Hakerman91!)"
 log "   ComfyUI: http://<server-ip>:5100"
 log "   Open WebUI: http://<server-ip>:5102"
