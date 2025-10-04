@@ -110,20 +110,19 @@ else
     log_success "All essential packages are already installed"
 fi
 
-# Install Docker and NVIDIA packages (these need special repos)
+# Install Docker packages
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin \
-    nvidia-driver nvidia-settings nvidia-smi nvidia-container-toolkit
+    docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
 # Install OpenVPN
 log "Installing OpenVPN server..."
 DEBIAN_FRONTEND=noninteractive apt-get install -y openvpn easy-rsa
 
-# Install additional AI/ML tools
-log "Installing AI development tools..."
+# Install basic AI/ML tools (GPU-specific tools will be installed by GPU setup)
+log "Installing basic AI development tools..."
 pip3 install --break-system-packages \
-    nvitop gpustat \
-    nvidia-ml-py3
+    torch torchvision torchaudio \
+    transformers accelerate
 
 git clone https://github.com/TakermanLTD/os-takerman.git /root/server
 
@@ -141,12 +140,11 @@ log "Configuring TAKERMAN AI Server environment..."
 log "Setting up TAKERMAN command aliases..."
 cat > /root/.takerman_aliases << 'EOF'
 # TAKERMAN AI Server Aliases
-# GPU and AI Management
-alias takgpu='nvidia-smi'
-alias takgpuwatch='watch -n 1 nvidia-smi'
-alias takgpustats='gpustat -i 1'
-alias taknvtop='nvtop'
-alias takgputemp='nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader,nounits'
+# GPU and AI Management (Universal)
+alias takgpu='/usr/local/bin/takgpu'
+alias takgpuwatch='watch -n 1 /usr/local/bin/takgpu'
+alias takgpustats='takgpu'
+alias takgputemp='/usr/local/bin/takgputemp'
 
 # Docker Management
 alias takdocker='docker'
@@ -160,6 +158,8 @@ alias takup='docker-compose up -d'
 alias takdown='docker-compose down'
 alias taklogs='docker-compose logs -f'
 alias takservices='/root/takerman_services.sh'
+alias takgpusetup='/root/setup_universal_gpu.sh'
+alias takgpureset='/root/reset_gpu.sh'
 
 # System Monitoring
 alias takstats='takerman-stats'
@@ -359,36 +359,12 @@ function takquick() {
 }
 EOF
 
-# 3.4 Configure NVIDIA Container Toolkit  
-log "Configuring NVIDIA Docker integration..."
-nvidia-ctk runtime configure --runtime=docker
+# 3.4 Configure Docker (GPU setup will be done separately)
+log "Configuring Docker daemon..."
 
-# Get GPU UUID for resource allocation
-log "Detecting GPU UUID for resource allocation..."
-GPU_UUID=$(nvidia-smi -a | grep "GPU UUID" | head -1 | awk '{print $4}')
-if [ -z "$GPU_UUID" ]; then
-    log_warning "Could not detect GPU UUID, using placeholder"
-    GPU_UUID="GPU-placeholder-uuid"
-fi
-log "Using GPU UUID: $GPU_UUID"
-
-# Create optimized Docker daemon configuration with GPU sharing
+# Create basic Docker daemon configuration (GPU will be added by universal GPU setup)
 cat > /etc/docker/daemon.json << EOF
 {
-    "default-runtime": "nvidia",
-    "node-generic-resources": [
-        "NVIDIA_GPU_1=$GPU_UUID",
-        "NVIDIA_GPU_2=$GPU_UUID",
-        "NVIDIA_GPU_3=$GPU_UUID",
-        "NVIDIA_GPU_4=$GPU_UUID",
-        "NVIDIA_GPU_5=$GPU_UUID"
-    ],
-    "runtimes": {
-        "nvidia": {
-            "path": "nvidia-container-runtime",
-            "args": []
-        }
-    },
     "log-driver": "json-file",
     "log-opts": {
         "max-size": "100m",
@@ -414,6 +390,15 @@ EOF
 
 systemctl enable docker
 systemctl restart docker
+
+# Run universal GPU detection and setup
+log "Running universal GPU detection and setup..."
+if [ -f "/tmp/custom-install/setup_universal_gpu.sh" ]; then
+    chmod +x /tmp/custom-install/setup_universal_gpu.sh
+    /tmp/custom-install/setup_universal_gpu.sh
+else
+    log_warning "Universal GPU setup script not found - GPU support may be limited"
+fi
 
 # 3.5 Configure secure SSH for root access
 log "Configuring SSH security with Hakerman91! password..."
@@ -581,11 +566,15 @@ else
     log_error "Docker not found - this is critical!"
 fi
 
-# Check NVIDIA drivers
+# Check GPU drivers (universal)
 if command -v nvidia-smi >/dev/null 2>&1; then
-    log_success "NVIDIA drivers are installed"
+    log_success "NVIDIA GPU drivers detected"
+elif command -v radeontop >/dev/null 2>&1; then
+    log_success "AMD GPU drivers detected"
+elif command -v intel_gpu_top >/dev/null 2>&1; then
+    log_success "Intel GPU tools detected"
 else
-    log_warning "NVIDIA drivers not found - GPU features may not work"
+    log_warning "No GPU-specific tools found - using integrated/basic graphics"
 fi
 
 # Check SSH
@@ -602,11 +591,22 @@ log "Setting up base directories for Docker volumes..."
 mkdir -p /root/volumes
 chmod -R 755 /root/volumes
 
-# Copy the main docker-compose.yml from server repo
-log "Setting up Docker Compose configuration..."
+# Copy Docker Compose templates and configurations
+log "Setting up Docker Compose configurations..."
+
+# Create docker directory
+mkdir -p /root/docker
+
+# Copy all GPU-specific Docker Compose templates
+if [ -d "/root/server/docker" ]; then
+    cp -r /root/server/docker/* /root/docker/
+    log "Copied GPU-specific Docker Compose templates"
+fi
+
+# Copy the main docker-compose.yml (will be replaced by GPU setup)
 if [ -f "/root/server/docker-compose.yml" ]; then
     cp /root/server/docker-compose.yml /root/docker-compose.yml
-    log_success "Docker Compose configuration ready"
+    log_success "Docker Compose configuration ready (will be updated for detected GPU)"
 else
     log_warning "Docker Compose file not found in server repo"
 fi
@@ -618,29 +618,26 @@ if [ -f "/tmp/custom-install/takerman_services.sh" ]; then
     log_success "TAKERMAN services management script ready"
 fi
 
+# Copy GPU management scripts
+if [ -f "/tmp/custom-install/setup_universal_gpu.sh" ]; then
+    cp /tmp/custom-install/setup_universal_gpu.sh /root/setup_universal_gpu.sh
+    chmod +x /root/setup_universal_gpu.sh
+    log_success "Universal GPU setup script ready"
+fi
+
+if [ -f "/tmp/custom-install/reset_gpu.sh" ]; then
+    cp /tmp/custom-install/reset_gpu.sh /root/reset_gpu.sh
+    chmod +x /root/reset_gpu.sh
+    log_success "GPU reset script ready"
+fi
+
 # 4. System optimization for AI workloads
 log "Optimizing system for AI performance..."
 
 # Increase shared memory for large models
 echo 'tmpfs /dev/shm tmpfs defaults,size=8G 0 0' >> /etc/fstab
 
-# GPU performance settings
-cat > /etc/systemd/system/gpu-performance.service << 'EOF'
-[Unit]
-Description=TAKERMAN GPU Performance Optimization
-After=graphical.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/nvidia-smi -pm 1
-ExecStart=/usr/bin/nvidia-smi --auto-boost-default=DISABLED
-RemainAfterExit=true
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl enable gpu-performance.service
+# GPU performance settings will be handled by universal GPU setup
 
 # Create service to auto-start Docker containers on boot
 log "Creating Docker auto-start service..."
@@ -688,12 +685,9 @@ chmod 644 /var/log/takerman/ai-server.log
 # Start Docker services
 log "Starting TAKERMAN AI Docker services..."
 
-# Ensure docker-compose.yml is in the right location
-if [ -f "/root/server/docker-compose.yml" ]; then
-    cp /root/server/docker-compose.yml /root/docker-compose.yml
-elif [ -f "/tmp/custom-install/docker-compose.yml" ]; then
-    cp /tmp/custom-install/docker-compose.yml /root/docker-compose.yml
-fi
+# GPU setup and Docker Compose configuration is handled by universal GPU detection
+# The docker-compose.yml will be replaced by the GPU-specific version automatically
+log "Docker Compose will be configured based on detected GPU hardware"
 
 # Check if we have the docker-compose file
 if [ -f "/root/docker-compose.yml" ]; then
@@ -771,7 +765,13 @@ EOF
 
 cat > /usr/local/bin/takgpu << 'EOF'
 #!/bin/bash
-nvidia-smi "$@"
+# Universal GPU monitoring - will be overwritten by GPU setup script
+if command -v nvidia-smi >/dev/null 2>&1; then
+    nvidia-smi "$@"
+else
+    echo "GPU monitoring not yet configured"
+    lspci | grep -i "vga\|3d\|display"
+fi
 EOF
 
 cat > /usr/local/bin/takdocker << 'EOF'
