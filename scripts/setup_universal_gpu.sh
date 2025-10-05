@@ -145,10 +145,10 @@ install_nvidia_gpu() {
     
     apt-get update
     
-    # Install NVIDIA drivers
+    # Install NVIDIA drivers and container tools
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
         nvidia-driver nvidia-settings nvidia-smi \
-        nvidia-container-toolkit \
+        nvidia-container-toolkit nvidia-docker2 \
         libnvidia-encode1 libnvidia-decode1
     
     # Configure Docker for NVIDIA

@@ -78,22 +78,57 @@ sed -i 's/main$/main contrib non-free non-free-firmware/' /etc/apt/sources.list
 # Update package lists
 apt-get update
 
-log "Ensuring all required packages are installed..."
+log "Installing essential server packages for AI workloads..."
 
-# Essential system packages (install if missing)
-ESSENTIAL_PACKAGES=(
-    "openssh-server" "curl" "wget" "git" "htop" "iotop" "iftop"
+# Core system packages (organized by category)
+CORE_PACKAGES=(
+    # SSH and remote access
+    "openssh-server"
+    
+    # Essential utilities
+    "curl" "wget" "git" "rsync" "sudo"
+    
+    # Text editors and file management
+    "vim" "nano" "tree" "less" "mc"
+    
+    # Archive and compression
+    "zip" "unzip"
+    
+    # Python environment (required for AI)
     "python3" "python3-pip" "python3-venv"
-    "ufw" "fail2ban" 
-    "vim" "nano" "screen" "tmux" "tree" "less" "mc"
-    "zip" "unzip" "rsync" "sudo"
-    "net-tools" "iputils-ping" "traceroute" "dnsutils" 
+    
+    # Security and firewall
+    "ufw" "fail2ban"
+)
+
+# Networking and monitoring tools (useful for server management)
+NETWORK_PACKAGES=(
+    # Network utilities (including netstat in net-tools)
+    "net-tools" "iputils-ping" "traceroute" "dnsutils"
     "nmap" "netcat-openbsd" "tcpdump"
-    "iperf3" "lm-sensors" "smartmontools"
+    
+    # System monitoring
+    "htop" "iotop" "iftop" "lm-sensors" "smartmontools"
+    
+    # Performance testing
+    "iperf3"
+)
+
+# Development and debugging tools
+DEV_PACKAGES=(
+    # Terminal multiplexers
+    "screen" "tmux"
+    
+    # System utilities
     "bash-completion" "man-db" "locate"
     "psmisc" "procps" "lsof" "strace"
+    
+    # File and network tools
     "file" "whois" "openssl"
 )
+
+# Combine all essential packages
+ESSENTIAL_PACKAGES=("${CORE_PACKAGES[@]}" "${NETWORK_PACKAGES[@]}" "${DEV_PACKAGES[@]}")
 
 # Check and install missing packages
 MISSING_PACKAGES=()
@@ -103,26 +138,215 @@ for package in "${ESSENTIAL_PACKAGES[@]}"; do
     fi
 done
 
+# Create APT preferences to prevent unwanted packages
+log "Configuring package preferences to prevent desktop packages..."
+cat > /etc/apt/preferences.d/no-desktop << 'EOF'
+# Prevent installation of desktop environment packages
+Package: libreoffice* gnome* kde* xfce* lxde* mate* cinnamon* x11-common xorg*
+Pin: version *
+Pin-Priority: -1
+
+# Prevent games and multimedia packages
+Package: games-* *-games *game* vlc* totem* rhythmbox* 
+Pin: version *
+Pin-Priority: -1
+
+# Prevent documentation packages that are large
+Package: *-doc-* doc-*
+Pin: version *
+Pin-Priority: -1
+EOF
+
 if [ ${#MISSING_PACKAGES[@]} -gt 0 ]; then
-    log_warning "Installing missing packages: ${MISSING_PACKAGES[*]}"
-    DEBIAN_FRONTEND=noninteractive apt-get install -y "${MISSING_PACKAGES[@]}"
+    log "Installing missing packages: ${MISSING_PACKAGES[*]}"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"
 else
     log_success "All essential packages are already installed"
 fi
 
-# Install Docker packages
-DEBIAN_FRONTEND=noninteractive apt-get install -y \
+# Install Docker packages (essential for AI services)
+log "Installing Docker and container tools..."
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-# Install OpenVPN
-log "Installing OpenVPN server..."
-DEBIAN_FRONTEND=noninteractive apt-get install -y openvpn easy-rsa
+# Install additional tools that might not be in preseed
+log "Installing additional tools..."
+ADDITIONAL_PACKAGES=(
+    "rclone" "timeshift" "nvtop" "pyenv"
+    "openvpn" "easy-rsa" 
+    "telnet" "ftp" "ncftp" "lftp"
+)
 
-# Install basic AI/ML tools (GPU-specific tools will be installed by GPU setup)
-log "Installing basic AI development tools..."
-pip3 install --break-system-packages \
-    torch torchvision torchaudio \
-    transformers accelerate
+for package in "${ADDITIONAL_PACKAGES[@]}"; do
+    if ! dpkg -l | grep -q "^ii  $package "; then
+        log "Installing $package..."
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$package" 2>/dev/null || log_warning "Package $package not available in repos, will install later"
+    fi
+done
+
+# AI/ML Python packages will be installed in containers, not on host system
+log "Host system setup completed - AI/ML tools will run in containers"
+
+# Configure ClamAV antivirus
+log "Configuring ClamAV antivirus system..."
+systemctl stop clamav-daemon 2>/dev/null || true
+systemctl stop clamav-freshclam 2>/dev/null || true
+
+# Update virus definitions
+log "Updating ClamAV virus definitions..."
+freshclam
+
+# Configure ClamAV daemon
+cat > /etc/clamav/clamd.conf << 'EOF'
+LogFile /var/log/clamav/clamav.log
+LogTime true
+LogClean false
+LogSyslog false
+LogFacility LOG_LOCAL6
+LogVerbose false
+ExtendedDetectionInfo true
+PidFile /var/run/clamav/clamd.pid
+LocalSocket /var/run/clamav/clamd.ctl
+LocalSocketGroup clamav
+LocalSocketMode 666
+FixStaleSocket true
+TCPSocket 3310
+TCPAddr 127.0.0.1
+MaxConnectionQueueLength 15
+StreamMaxLength 25M
+MaxThreads 12
+ReadTimeout 180
+CommandReadTimeout 30
+SendBufTimeout 200
+MaxQueue 100
+IdleTimeout 30
+ExcludePath ^/proc/
+ExcludePath ^/sys/
+ExcludePath ^/dev/
+ExcludePath ^/run/
+ExcludePath ^/var/lib/docker/
+User clamav
+ScanMail true
+ScanArchive true
+ArchiveBlockEncrypted false
+ScanPE true
+ScanELF true
+ScanOLE2 true
+ScanPDF true
+ScanSWF true
+ScanHTML true
+MaxScanSize 100M
+MaxFileSize 25M
+MaxRecursion 16
+MaxFiles 10000
+MaxEmbeddedPE 10M
+MaxHTMLNormalize 10M
+MaxHTMLNoTags 2M
+MaxScriptNormalize 5M
+MaxZipTypeRcg 1M
+SelfCheck 3600
+Foreground false
+Debug false
+ScanOnAccess false
+OnAccessMaxFileSize 5M
+CrossFilesystems true
+FollowDirectorySymlinks false
+FollowFileSymlinks false
+EOF
+
+# Configure freshclam for automatic updates
+cat > /etc/clamav/freshclam.conf << 'EOF'
+DatabaseOwner clamav
+UpdateLogFile /var/log/clamav/freshclam.log
+LogVerbose false
+LogSyslog false
+LogFacility LOG_LOCAL6
+LogFileMaxSize 0
+LogRotate true
+LogTime true
+Foreground false
+Debug false
+MaxAttempts 5
+DatabaseDirectory /var/lib/clamav
+DNSDatabaseInfo current.cvd.clamav.net
+ConnectTimeout 30
+ReceiveTimeout 0
+TestDatabases yes
+ScriptedUpdates yes
+CompressLocalDatabase no
+Bytecode true
+NotifyClamd /etc/clamav/clamd.conf
+Checks 24
+DatabaseMirror db.local.clamav.net
+DatabaseMirror database.clamav.net
+EOF
+
+# Set up ClamAV services
+systemctl enable clamav-daemon
+systemctl enable clamav-freshclam
+systemctl start clamav-freshclam
+sleep 5
+systemctl start clamav-daemon
+
+# Create daily scan script
+cat > /usr/local/bin/takerman-clamscan << 'EOF'
+#!/bin/bash
+LOG_FILE="/var/log/takerman/clamav-scan.log"
+mkdir -p /var/log/takerman
+
+echo "$(date): Starting daily ClamAV scan..." >> $LOG_FILE
+clamscan -r --bell -i /home /opt /usr/local/bin /etc --log=$LOG_FILE
+echo "$(date): Daily ClamAV scan completed" >> $LOG_FILE
+EOF
+
+chmod +x /usr/local/bin/takerman-clamscan
+
+# Set up daily scan cron job
+echo "0 2 * * * root /usr/local/bin/takerman-clamscan" >> /etc/crontab
+
+log_success "ClamAV antivirus configured and enabled"
+
+# Remove snapd and prevent installation
+log "Removing snapd and blocking snap packages..."
+systemctl stop snapd 2>/dev/null || true
+systemctl disable snapd 2>/dev/null || true
+apt-get remove --purge -y snapd 2>/dev/null || true
+
+# Block snapd from being installed
+cat > /etc/apt/preferences.d/no-snap << 'EOF'
+Package: snapd
+Pin: release a=*
+Pin-Priority: -10
+EOF
+
+# Clean up any unwanted packages that may have been installed
+log "Cleaning up unwanted packages..."
+UNWANTED_PACKAGES=(
+    libreoffice-common libreoffice-core libreoffice-writer libreoffice-calc
+    gnome-core kde-plasma-desktop xfce4 lxde-core mate-desktop-environment
+    games-* *-games firefox-esr chromium
+    vlc totem rhythmbox snapd
+)
+
+for package in "${UNWANTED_PACKAGES[@]}"; do
+    if dpkg -l | grep -q "^ii  $package"; then
+        log_warning "Removing unwanted package: $package"
+        apt-get remove --purge -y "$package" 2>/dev/null || true
+    fi
+done
+
+# Clean up package cache and orphaned packages
+apt-get autoremove -y
+apt-get autoclean
+
+# Set up auto-mount system for additional drives
+log "Setting up automatic drive mounting..."
+if [ -f "/tmp/custom-install/auto_mount_drives.sh" ]; then
+    cp /tmp/custom-install/auto_mount_drives.sh /usr/local/bin/takerman-automount
+    chmod +x /usr/local/bin/takerman-automount
+    /usr/local/bin/takerman-automount
+    log_success "Auto-mount system configured"
+fi
 
 git clone https://github.com/TakermanLTD/os-takerman.git /root/server
 
@@ -138,7 +362,10 @@ log "Configuring TAKERMAN AI Server environment..."
 
 # 3.1 Create TAKERMAN aliases and functions
 log "Setting up TAKERMAN command aliases..."
-cat > /root/.takerman_aliases << 'EOF'
+
+# Add aliases directly to ~/.bashrc
+cat >> /root/.bashrc << 'EOF'
+
 # TAKERMAN AI Server Aliases
 # GPU and AI Management (Universal)
 alias takgpu='/usr/local/bin/takgpu'
@@ -185,8 +412,21 @@ alias takupdate='apt update && apt upgrade -y'
 
 # Useful shortcuts
 alias taklog='tail -f /var/log/takerman/ai-server.log'
+
+# System Information
+alias takpkgs='dpkg -l | grep "^ii" | wc -l; echo "packages installed"'
+alias taksize='du -sh / --exclude=/proc --exclude=/sys --exclude=/dev 2>/dev/null | head -1'
 alias takerror='journalctl -f -p err'
 alias takconfig='cd /root/.takerman'
+
+# Auto-mount alias
+alias takmount='/usr/local/bin/takerman-automount'
+
+# ClamAV aliases
+alias takscan='/usr/local/bin/takerman-clamscan'
+alias takavirus='tail -f /var/log/takerman/clamav-scan.log'
+
+# Enhanced ls aliases
 alias ll='ls -alF'
 alias la='ls -A'
 alias l='ls -CF'
@@ -280,30 +520,13 @@ chmod +x /usr/local/bin/takerman-stats
 
 # 3.3 Configure custom root bashrc
 log "Setting up TAKERMAN shell environment..."
-cat > /root/.bashrc << 'EOF'
+
+# Update .bashrc with TAKERMAN customizations (aliases already added above)
+cat >> /root/.bashrc << 'EOF'
+
 # TAKERMAN AI Server Root Shell Configuration
-
-# Source global definitions
-if [ -f /etc/bash.bashrc ]; then
-    . /etc/bash.bashrc
-fi
-
 # Colors for prompt
 export PS1='\[\033[01;35m\][\[\033[01;37m\]TAKERMAN\[\033[01;35m\]]\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
-
-# Load TAKERMAN aliases
-if [ -f ~/.takerman_aliases ]; then
-    . ~/.takerman_aliases
-fi
-
-# Ensure aliases are available in all new bash sessions
-if ! grep -q "source.*takerman_aliases" /etc/bash.bashrc 2>/dev/null; then
-    echo "" >> /etc/bash.bashrc
-    echo "# TAKERMAN AI Server aliases" >> /etc/bash.bashrc
-    echo "if [ -f /root/.takerman_aliases ]; then" >> /etc/bash.bashrc
-    echo "    source /root/.takerman_aliases" >> /etc/bash.bashrc
-    echo "fi" >> /etc/bash.bashrc
-fi
 
 # Environment variables
 export EDITOR=nano
