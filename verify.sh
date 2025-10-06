@@ -35,8 +35,6 @@ check "configs/preseed.cfg" || ((errors++))
 echo ""
 echo "Directories:"
 check "configs" || ((errors++))
-check "docs" || ((errors++))
-check "old_backup" || ((errors++))
 
 echo ""
 if [ $errors -eq 0 ]; then
