@@ -8,10 +8,10 @@ Complete guide for using and managing your TAKERMAN AI Server.
 
 **CRITICAL: Change these immediately after first login!**
 
-| Service | Username | Password | Port |
-|---------|----------|----------|------|
-| **Root SSH** | `root` | `(set during installation)` | 22 |
-| **N8N Workflow** | `takerman` | `Hakerman91!` | 5103 |
+| Service          | Username   | Password                    | Port |
+| ---------------- | ---------- | --------------------------- | ---- |
+| **Root SSH**     | `root`     | `(set during installation)` | 22   |
+| **N8N Workflow** | `takerman` | `Hakerman91!`               | 5103 |
 
 ### 🚨 First Login Steps
 
@@ -32,6 +32,7 @@ takstats
 ## 🌐 Network Configuration
 
 ### Default Settings
+
 - **Hostname**: `TAKERMAN`
 - **Domain**: `takerman.net`
 - **Network**: DHCP (automatic IP assignment)
@@ -87,12 +88,46 @@ systemctl restart networking
 
 ## 🎮 GPU Management
 
+### 🚀 Automatic GPU Detection & Configuration
+
+The TAKERMAN AI Server features **Universal GPU Detection** that automatically identifies and configures your GPU during installation:
+
+- **NVIDIA GPUs**: Automatically installs NVIDIA drivers, CUDA toolkit, and Docker GPU support
+- **AMD GPUs**: Configures ROCm drivers and OpenCL support
+- **Intel GPUs**: Sets up Intel Graphics drivers and compute runtime
+- **No GPU**: Optimizes for CPU-only workloads
+
+#### Supported GPU Types
+
+| GPU Vendor     | Automatic Configuration     | Docker Support      | AI Framework Support        |
+| -------------- | --------------------------- | ------------------- | --------------------------- |
+| **NVIDIA**     | ✅ Full driver installation | ✅ nvidia-docker2   | ✅ CUDA, cuDNN, TensorRT    |
+| **AMD**        | ✅ ROCm driver setup        | ✅ ROCm containers  | ✅ ROCm, OpenCL             |
+| **Intel**      | ✅ Graphics & compute       | ✅ Intel GPU plugin | ✅ OpenVINO, oneAPI         |
+| **Integrated** | ✅ Basic optimization       | ✅ CPU containers   | ✅ CPU-optimized frameworks |
+
+#### Manual GPU Reconfiguration
+
+If you change your GPU or need to reconfigure:
+
+```bash
+# Reconfigure GPU setup (auto-detects new GPU)
+sudo /root/scripts/setup_universal_gpu.sh
+
+# Clean and reconfigure GPU setup
+sudo /root/scripts/setup_universal_gpu.sh --clean
+
+# Reset GPU settings
+sudo /root/scripts/reset_gpu.sh
+```
+
 ### Check GPU Status
 
 ```bash
-# Quick GPU info
+# Quick GPU info (works for all GPU types)
 takgpu
-# or
+
+# NVIDIA-specific commands
 nvidia-smi
 
 # Real-time GPU monitoring
@@ -140,16 +175,16 @@ docker run --rm --gpus all pytorch/pytorch:latest python -c "import torch; print
 
 The server comes with pre-configured Docker services:
 
-| Service | Port | Description |
-|---------|------|-------------|
-| **Jupyter Lab** | 8888 | Python notebooks with GPU support |
-| **ComfyUI** | 8188 | AI image generation interface |
-| **TensorBoard** | 6006 | ML experiment tracking |
-| **N8N** | 5103 | Workflow automation |
-| **Grafana** | 3001 | Monitoring dashboards and metrics visualization |
-| **Prometheus** | 9090 | Metrics collection and time-series database |
-| **Portainer** | 9443 | Docker container management UI |
-| **Dozzle** | 8050 | Real-time Docker log viewer |
+| Service         | Port | Description                                     |
+| --------------- | ---- | ----------------------------------------------- |
+| **Jupyter Lab** | 8888 | Python notebooks with GPU support               |
+| **ComfyUI**     | 8188 | AI image generation interface                   |
+| **TensorBoard** | 6006 | ML experiment tracking                          |
+| **N8N**         | 5103 | Workflow automation                             |
+| **Grafana**     | 3001 | Monitoring dashboards and metrics visualization |
+| **Prometheus**  | 9090 | Metrics collection and time-series database     |
+| **Portainer**   | 9443 | Docker container management UI                  |
+| **Dozzle**      | 8050 | Real-time Docker log viewer                     |
 
 ### Starting Services
 
@@ -566,6 +601,7 @@ EOF
 **URL**: `http://YOUR_SERVER_IP:3001`
 
 **Default Credentials**:
+
 - Username: `takerman`
 - Password: `Hakerman91!`
 
@@ -583,6 +619,7 @@ docker compose up -d monitoring_grafana monitoring_prometheus monitoring_node_ex
 ### Pre-configured Datasources
 
 Grafana comes with Prometheus pre-configured as the default datasource:
+
 - **Name**: Prometheus
 - **URL**: http://monitoring_prometheus:9090
 - **Type**: Prometheus
@@ -597,16 +634,19 @@ Grafana comes with Prometheus pre-configured as the default datasource:
 ```
 
 **System Monitoring**:
+
 1. **1860** - Node Exporter Full (CPU, RAM, Disk, Network)
 2. **11074** - Node Exporter for Prometheus Dashboard
 3. **12486** - Node Exporter Full (Alternative)
 
 **Docker Monitoring**:
+
 1. **11600** - Docker Container & Host Metrics
 2. **193** - Docker Monitoring
 3. **395** - Docker Dashboard
 
 **GPU Monitoring** (requires NVIDIA DCGM Exporter):
+
 1. **14574** - NVIDIA GPU Metrics
 2. **12239** - NVIDIA DCGM Exporter Dashboard
 
@@ -642,26 +682,31 @@ docker restart monitoring_prometheus
 **Example: AI Workload Dashboard**
 
 1. **CPU Usage Panel**:
+
 ```promql
 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
 ```
 
 2. **Memory Usage Panel**:
+
 ```promql
 (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100
 ```
 
 3. **GPU Temperature**:
+
 ```promql
 DCGM_FI_DEV_GPU_TEMP
 ```
 
 4. **GPU Utilization**:
+
 ```promql
 DCGM_FI_DEV_GPU_UTIL
 ```
 
 5. **Docker Container Count**:
+
 ```promql
 count(container_last_seen)
 ```
@@ -752,16 +797,19 @@ docker restart monitoring_prometheus
 ### Grafana Tips
 
 **Change Admin Password**:
+
 ```bash
 docker exec -it monitoring_grafana grafana-cli admin reset-admin-password NEW_PASSWORD
 ```
 
 **Backup Grafana Data**:
+
 ```bash
 tar czf grafana-backup-$(date +%Y%m%d).tar.gz /root/volumes/monitoring/grafana/
 ```
 
 **Install Additional Plugins**:
+
 ```bash
 docker exec -it monitoring_grafana grafana-cli plugins install grafana-worldmap-panel
 docker restart monitoring_grafana
@@ -850,6 +898,7 @@ journalctl -u openvpn@server -f
 ### Complete Command Reference
 
 #### GPU Management
+
 ```bash
 takgpu          # Show GPU status (nvidia-smi)
 takgpuwatch     # Real-time GPU monitoring
@@ -859,6 +908,7 @@ takgputemp      # Show GPU temperature
 ```
 
 #### Docker Management
+
 ```bash
 takdocker       # Docker command shortcut
 takps           # List running containers
@@ -873,6 +923,7 @@ taklogs         # View service logs
 ```
 
 #### System Monitoring
+
 ```bash
 takstats        # Show TAKERMAN dashboard
 taktop          # Process monitor (htop)
@@ -885,6 +936,7 @@ takcpu          # CPU information
 ```
 
 #### Security & Network
+
 ```bash
 takports        # Show open ports
 takfw           # Firewall status
@@ -893,6 +945,7 @@ takssh          # SSH service status
 ```
 
 #### System Control
+
 ```bash
 takreboot       # Reboot server
 takshutdown     # Shutdown server
@@ -901,6 +954,7 @@ takupdate       # Update system packages
 ```
 
 #### Logs & Troubleshooting
+
 ```bash
 taklog          # View TAKERMAN setup log
 takerror        # View system errors
@@ -908,6 +962,7 @@ takconfig       # Go to config directory
 ```
 
 #### Help
+
 ```bash
 takhelp         # Show all TAKERMAN commands
 ```
@@ -1008,15 +1063,15 @@ nano /etc/fstab  # Comment out swap line
 
 ### Important Files & Locations
 
-| Path | Description |
-|------|-------------|
-| `/root/.takerman/` | TAKERMAN configuration directory |
-| `/root/server/` | Server repository with docker-compose.yml |
-| `/var/log/takerman/` | TAKERMAN logs |
-| `/etc/docker/` | Docker configuration |
-| `/etc/openvpn/` | OpenVPN configuration |
-| `/root/.bashrc` | Shell configuration with aliases |
-| `/root/.takerman_aliases` | TAKERMAN command aliases |
+| Path                      | Description                               |
+| ------------------------- | ----------------------------------------- |
+| `/root/.takerman/`        | TAKERMAN configuration directory          |
+| `/root/server/`           | Server repository with docker-compose.yml |
+| `/var/log/takerman/`      | TAKERMAN logs                             |
+| `/etc/docker/`            | Docker configuration                      |
+| `/etc/openvpn/`           | OpenVPN configuration                     |
+| `/root/.bashrc`           | Shell configuration with aliases          |
+| `/root/.takerman_aliases` | TAKERMAN command aliases                  |
 
 ### Service URLs (Local Access)
 
